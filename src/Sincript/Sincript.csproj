@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Plan §2: single-file NativeAOT, 64-bit only, no runtime dependency on end-user PCs. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <AssemblyName>Sincript</AssemblyName>
+    <RootNamespace>Sincript</RootNamespace>
+    <Version>2.0.0-alpha.1</Version>
+
+    <!-- AOT + size. PublishAot also turns the AOT/trim analyzers on during plain builds,
+         so incompatibilities surface in CI on every commit, not only at publish (plan §12). -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- §2 bitness contract: the batch ran under 64-bit cmd, so WOW6432Node paths and the
+         default registry view must match. PE is marked 64-bit-required; Program.cs asserts too. -->
+    <PlatformTarget>x64</PlatformTarget>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Allows compiling the Windows-targeted project on non-Windows dev hosts (restore of
+         Windows ref packs). The native AOT *publish* still requires a Windows machine/CI. -->
+    <EnableWindowsTargeting Condition="!$([MSBuild]::IsOSPlatform('Windows'))">true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- P1 will add the test project; the internals boundary is declared now. -->
+    <InternalsVisibleTo Include="Sincript.Tests" />
+  </ItemGroup>
+
+</Project>

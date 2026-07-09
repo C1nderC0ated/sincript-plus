@@ -1,0 +1,73 @@
+# DECISIONS.md — living decision ledger
+
+Companion to `sincript-csharp-refactor-plan.md` §7. Every deviation from the batch reference
+or from the plan gets an entry here; silent judgment calls are not allowed (plan §13).
+
+## Sign-off record — 2026-07-10 (author)
+
+The plan (§7) shipped six Bucket-B items requiring explicit sign-off. All six were
+**APPROVED by the author on 2026-07-10**, plus one scoped feature un-deferral (D16).
+
+| # | Decision | Bucket | Status | Notes |
+|---|---|---|---|---|
+| D1 | asInvoker manifest + self-relaunch (limited mode survives) | — | Per plan | Implemented in P0 (`app.manifest`, `Elevation.cs`) |
+| D2 | Back up **all** registry value kinds restorably (UTF-16LE `.reg`, richer JSON `oldtype`s) | B | **APPROVED 2026-07-10** | Lands in P1 (`RegFileWriter`, `PriorValue`) + P3 (JSON writer/restorer branches). Batch-era restorers skip the new `oldtype`s gracefully (plan §6.4) |
+| D3 | Extend the idempotent skip from DWORD-only to exact-match on **all** kinds | B | **APPROVED 2026-07-10** | Lands in P1 (`RegistryService.AlreadyAtTarget`). Fixes the latent SZ backup-burial gap; fulfills the batch comment's stated intent |
+| D4 | Stream live stdout for repair-class long-runners (DISM, SFC, WinSxS, WU reset, netsh reset); keep suppression elsewhere; log stays outcome-only (I13) | B | **APPROVED 2026-07-10** | Lands in P2 (`ExternalCommand` gains a `StreamOutput` mode) |
+| D5 | SteamLight shortcut: hidden PS child now, `IShellLinkW` ComWrappers later | — | Per plan | P4 |
+| D6 | `Console.OutputEncoding = UTF8`; real Unicode in display and log (Cyrillic startup names, non-ASCII paths) | B | **APPROVED 2026-07-10** | Implemented in P0 (`Program.cs`, `Logger.cs`). The "Names are shown ASCII-only" caption is removed when the startup manager ports in P4 |
+| D7 | Surviving PowerShell children (Appx, MMAgent, restore point, DNS-set phase-1), all `CreateNoWindow` | — | Per plan | P2/P4/P5 |
+| D8 | powercfg / bcdedit / schtasks / netsh / sc / reg export-import stay subprocesses | — | Per plan | P2/P5 |
+| D9 | Temp cleanup does **not** recurse into reparse points / junctions | B | **APPROVED 2026-07-10** | Lands in P2 (`CleanupActions`); a safety narrowing of `del /f /s /q` semantics |
+| D10 | SteamLight launcher remains a user-editable `.bat`, content verbatim | — | Per plan | P4 |
+| D11 | Declined-UAC parent offers limited mode instead of vanishing (catch `Win32Exception` 1223) | B | **APPROVED 2026-07-10** | Implemented in P0 (`Program.cs` / `Elevation.TryRelaunchElevated`) |
+| D12 | Uniq tokens: `%RANDOM%(%RANDOM%)` → `yyyyMMdd_HHmmss` + 8-hex GUID slice; prefixes unchanged | — | Per plan | Implemented in P0 for the log; P1 for backups |
+| D13 | Menu input stays line-based; the three I9 prompt-default classes are the only primitives | — | Per plan | Implemented in P0 (`Prompts.cs`) |
+| D14 | Console cosmetics preserved (magenta theme, SIN logo, best-effort 100×36) | — | Per plan | Implemented in P0 (`ConsoleUi.cs`) |
+| D15 | Data-driven tweak catalog | — | Per plan | P2 |
+
+## D16 — Laptop-aware tweak advisories *(new; author-requested un-deferral, APPROVED 2026-07-10)*
+
+**What.** A small hardware-detection feature that explicitly marks tweaks that are typically
+harmful to apply on laptops, forward-compatible with the plan-§11 full detection engine.
+
+**Detection (implemented in P0, `Core/Hardware.cs`).** `PowerDeterminePlatformRoleEx`
+(powrprof.dll) maps `Mobile`/`Slate` → Laptop, the desktop/workstation/server roles → Desktop;
+`Unspecified` falls back to battery presence via `GetSystemPowerStatus` (no-system-battery →
+Desktop). Pure P/Invoke, AOT-safe, never throws; an undetectable machine is `Unknown` and no
+advisory ever fires. No WMI (AOT posture, plan §12).
+
+**Model (implemented in P0).**
+- `HardwareProfile` record — the single object consumers read. The future engine *replaces
+  `HardwareDetector` and widens this record* (CPU, RAM, GPU detail, storage, AC/battery state)
+  without touching a single consumer. That is the forward-compatibility contract.
+- `TweakAdvisory` `[Flags]` enum — `HarmfulOnLaptop`, plus `HarmfulOnDesktop` (the batch's own
+  LargeSystemCache wording: "can help some laptops, can hurt desktops"). New engine conditions
+  (`HarmfulOnLowRam`, …) slot in as new flags.
+- `Advisories.WarnIfApplicable(session, flags)` — the one rendering choke point.
+
+**Behavioral rules (binding).** Advisories are **warning-only**: shown after an action's banner
+and before its confirm prompt; they never block, never change a prompt default, never alter
+what a preset applies. The opt-in philosophy stays intact — this is information, not gatekeeping
+(plan §0 rule 1, I9 untouched).
+
+**P2 wiring list** (where `TweakAdvisory` attaches when the catalog lands):
+- Power core (high-performance/Ultimate plan + all sleep timeouts to never) → `HarmfulOnLaptop`
+- Hibernate-off optional knob → `HarmfulOnLaptop` (removes hibernate/fast-startup battery protection)
+- BCD timer set (`disabledynamictick yes`) → `HarmfulOnLaptop` (dynamic tick is a battery feature)
+- Timer-resolution autostart → `HarmfulOnLaptop` (a held high-resolution timer draws power)
+- LargeSystemCache opt-in → `HarmfulOnDesktop`
+- Heavy preset → surfaces the laptop advisory once in its banner (it contains power core + BCD)
+
+**Approved visible deltas** (recorded for `PARITY.md`): the main-menu status line and the start
+log line gain a `Machine=laptop|desktop|unknown` field; flagged actions print an
+`  [ADVISORY] …` line on matching machines. No other output changes.
+
+## P0 implementation footnotes (micro-deviations, all safety-neutral)
+
+- **F1.** `Prompts.MenuChoice` returns "0" (back/exit) on stdin EOF instead of cmd's
+  `set /p` fast-spin — makes headless CI smoke runs terminate; interactive behavior identical.
+- **F2.** Log timestamps are fixed `yyyy-MM-dd HH:mm:ss` instead of locale `%date% %time%`;
+  the I13 contract is the line *grammar*, and the batch stamp was never locale-stable anyway.
+- **F3.** `ConsoleUi.Pause` falls through without blocking when stdin is redirected — the
+  batch `pause < NUL` behaved the same way.

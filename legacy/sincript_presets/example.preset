@@ -1,0 +1,48 @@
+# ===================================================================
+#  Sincript custom preset  -  example.preset
+# ===================================================================
+#  HOW THIS FILE WORKS
+#    - One directive per line, written as   key=value
+#    - NO spaces around the = sign        (cleanup=1  not  cleanup = 1)
+#    - Start each directive in column 1   (no leading spaces)
+#    - A line that starts with # or ; is a comment and is ignored
+#    - Inline comments are NOT supported  (do not write  cleanup=1 # note)
+#    - Unknown keys or wrong values are reported and skipped; the rest
+#      of the file still applies. If nothing is valid, nothing is done.
+#    - Put this file in the  sincript_presets\  folder next to the
+#      script, then pick it from  Presets > Custom preset.
+#
+#  The full key list with explanations is in the Sincript README,
+#  section "Custom presets".
+# ===================================================================
+
+# ---- safe, reversible group (enabled in this example) ----
+cleanup=1
+privacy=1
+performance=1
+power=1
+network=1
+
+# ---- foreground / latency tuning ----
+gamemode_off=1
+systemresponsiveness=0
+networkthrottling_off=1
+# win32priority: 42 = short, fixed quantum (strong foreground); 26 = short variable quantum (strong foreground); 2 = Windows default
+win32priority=42
+
+# ---- DNS: cloudflare | google | quad9 (remove the # to enable) ----
+# dns=cloudflare
+
+# ===================================================================
+#  RISKIER / situational - left commented out on purpose.
+#  Read the README notes before enabling any of these.
+# ===================================================================
+# nagle_off=1
+# largesystemcache=1
+# minprocstate5=1
+# bcdtimers=1
+# ipv6_off=1
+# memcompress_off=1
+# nvme_flags=1
+# gpu_telemetry_off=1
+# openasar=1
