@@ -1,4 +1,4 @@
-# sincript-cs
+# sincript-plus
 
 The C# (NET 8, NativeAOT) migration of **sincript / PerfTweaks.cmd** — a Windows 10/11
 optimizer built on three principles: everything opt-in, everything backed up before it is
