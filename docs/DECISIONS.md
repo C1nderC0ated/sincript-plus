@@ -106,3 +106,33 @@ contract is enforced on the artifact that actually ships, on every commit.
   the I13 contract is the line *grammar*, and the batch stamp was never locale-stable anyway.
 - **F3.** `ConsoleUi.Pause` falls through without blocking when stdin is redirected — the
   batch `pause < NUL` behaved the same way.
+
+## P1 implementation footnotes (refinements under D2/D3, author-approved 2026-07-09)
+
+- **F4.** `PriorValue` captures the **raw `RegQueryValueEx` byte image plus the raw kind DWORD**,
+  not a `RegistryValueKind`-typed value. `Microsoft.Win32.Registry` cannot represent an
+  unterminated `REG_SZ`, an embedded NUL, a trailing empty `REG_MULTI_SZ` element, or any kind it
+  does not model — and D2 says *all* kinds back up restorably. A backup that normalizes its input
+  is not a backup. Side benefit: serialization becomes a pure `bytes -> text` function, testable
+  on any dev host, with the Win32 surface reduced to one P/Invoke.
+- **F5.** Kind decides the *text* form, never the *fidelity*. `REG_SZ` whose bytes are not a
+  cleanly terminated UTF-16 string falls back to `hex(1):`, and a `REG_DWORD` that is not exactly
+  four bytes falls back to `hex(4):`, rather than being laundered into a form that would restore
+  differently. Unnamed kinds serialize by their raw DWORD (`hex(2a):`).
+- **F6.** The `.reg` wrapping contract is **`reg import` compatibility, not byte-parity with
+  `reg export`**. We match its shape (80 columns, trailing `\`, two-space continuations) for
+  diff-friendliness, but importers accept a continuation after any comma, and no test asserts
+  byte-identity with `reg export`'s wrapping.
+- **F7.** `RegistryValueOptions.DoNotExpandEnvironmentNames` is mandatory anywhere a
+  `REG_EXPAND_SZ` is read for backup. Without it a backup of `%SystemRoot%` records
+  `C:\Windows`, and restoring it onto another machine writes the wrong path. Reading raw bytes
+  (F4) sidesteps this entirely; the footnote stands as a guard for any managed read added later.
+- **F8.** *(pending, not yet implemented)* `RegistryService.AlreadyAtTarget` (D3) compares kind
+  first, then data with **kind-aware** semantics: a differing trailing NUL on `SZ`/`EXPAND_SZ` and
+  the decoded string sequence for `MULTI_SZ` compare equal; `DWORD`/`QWORD`/`BINARY`/`NONE` are
+  byte-exact. Strict byte equality would make a stored `REG_SZ` lacking its terminator never
+  match its target, so every apply pass would rewrite it and snapshot the already-tweaked value as
+  its "prior" state — reintroducing the exact SZ backup-burial bug D3 exists to fix.
+- **F9.** *(pending)* I6 requires C# to list/preview/import **batch-era** `.reg` files, which
+  `echo` wrote in the console code page (ANSI). New files are UTF-16LE. The reader must sniff the
+  BOM and accept both.
