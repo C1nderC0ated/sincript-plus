@@ -136,3 +136,10 @@ contract is enforced on the artifact that actually ships, on every commit.
 - **F9.** *(pending)* I6 requires C# to list/preview/import **batch-era** `.reg` files, which
   `echo` wrote in the console code page (ANSI). New files are UTF-16LE. The reader must sniff the
   BOM and accept both.
+
+**Verification.** F4-F7 are no longer claims about our own model of the `.reg` format.
+`RegFileRoundTripTests` serializes a `PriorValue`, hands the file to `reg import`, reads the value
+back through `RegQueryValueEx`, and requires the bytes to come back identical — across all fifteen
+kinds, including the empty `REG_SZ`, empty `REG_MULTI_SZ`, `REG_NONE`, the 200-byte binary that
+forces line wrapping, and the `%SystemRoot%` that must survive unexpanded. Windows is the judge,
+so the test only runs there; CI is its first and only execution.
