@@ -63,6 +63,41 @@ what a preset applies. The opt-in philosophy stays intact — this is informatio
 log line gain a `Machine=laptop|desktop|unknown` field; flagged actions print an
 `  [ADVISORY] …` line on matching machines. No other output changes.
 
+## D17 — `PlatformTarget=x64` scoped to Windows builds *(P1; author-approved 2026-07-09)*
+
+**What.** `src/Sincript/Sincript.csproj` guards the plan-§2 PE marking with
+`Condition="$([MSBuild]::IsOSPlatform('Windows'))"`. On Windows — every dev box that ships
+anything, and CI — the property is unchanged and the IL stays 64-bit-required. On a non-Windows
+host it falls back to AnyCPU.
+
+**Why.** `PlatformTarget=x64` stamps the IL assembly as x86-64-*required*, and an arm64 .NET
+process refuses to load such an assembly (`FileLoadException: assembly architecture is not
+compatible with the current process architecture`). Unconditional, it makes `dotnet test`
+impossible on an Apple Silicon dev host: every test that touches a SUT type fails to load it.
+That would have forced P1's test suite to be CI-only from the day it was written.
+
+**Why this is safety-neutral.** The §2 contract is about the *running process* being 64-bit so
+`WOW6432Node` paths and the default registry view match the batch's 64-bit cmd. Three facts keep
+that intact:
+
+1. The shipped artifact is a NativeAOT `dotnet publish -r win-x64`; a native binary's
+   architecture comes from the RID, never from `PlatformTarget`. The published exe is
+   byte-for-byte unaffected by this condition.
+2. The publish gate runs on `windows-latest`, where the condition is true anyway.
+3. `Program.cs` already asserts `Environment.Is64BitProcess` and exits 1 otherwise. That runtime
+   check — not the PE header — is what actually enforces the contract; the csproj comment calls
+   the marking "belt and suspenders."
+
+**Precedent.** Identical in shape to the adjacent `EnableWindowsTargeting` accommodation, which
+already relaxes a Windows-only build constraint on non-Windows dev hosts on the stated grounds
+that "the native AOT *publish* still requires a Windows machine/CI."
+
+**Residual risk, and how it is closed.** A Release IL build produced *on* macOS/Linux is AnyCPU
+and would load in a 32-bit host. Nothing ships from such a build, and `Program.cs` rejects a
+32-bit process at startup regardless. Rather than leave this to the P6 audit, `ci.yml` now reads
+the published exe's COFF header and fails the job unless `Machine == 0x8664` (AMD64), so the
+contract is enforced on the artifact that actually ships, on every commit.
+
 ## P0 implementation footnotes (micro-deviations, all safety-neutral)
 
 - **F1.** `Prompts.MenuChoice` returns "0" (back/exit) on stdin EOF instead of cmd's

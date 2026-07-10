@@ -17,8 +17,15 @@
     <InvariantGlobalization>true</InvariantGlobalization>
 
     <!-- §2 bitness contract: the batch ran under 64-bit cmd, so WOW6432Node paths and the
-         default registry view must match. PE is marked 64-bit-required; Program.cs asserts too. -->
-    <PlatformTarget>x64</PlatformTarget>
+         default registry view must match. PE is marked 64-bit-required; Program.cs asserts too.
+
+         D17: the marking is scoped to Windows builds. An x64-stamped IL assembly cannot be
+         loaded by an arm64 .NET process, so an unconditional PlatformTarget makes `dotnet test`
+         impossible on an Apple Silicon dev host. The shipped artifact is a NativeAOT
+         `-r win-x64` publish whose architecture is fixed by the RID, not by this property, so
+         the condition can never reach a released binary; Program.cs's Is64BitProcess assert
+         remains the enforcing runtime guard. Same accommodation as EnableWindowsTargeting. -->
+    <PlatformTarget Condition="$([MSBuild]::IsOSPlatform('Windows'))">x64</PlatformTarget>
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
 

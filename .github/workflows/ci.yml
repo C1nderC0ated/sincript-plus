@@ -17,6 +17,12 @@ jobs:
       - name: Build (AOT + trim analyzers active, warnings are errors)
         run: dotnet build src/Sincript/Sincript.csproj -c Release
 
+      # Runs before the slow AOT publish so a red test fails the job fast. This is also the only
+      # place the [WindowsOnlyFact] set executes -- on a non-Windows dev host those skip, so the
+      # registry/Win32 seam is covered here or nowhere.
+      - name: Unit tests
+        run: dotnet test tests/Sincript.Tests/Sincript.Tests.csproj -c Release
+
       - name: NativeAOT publish (win-x64, single exe)
         run: dotnet publish src/Sincript/Sincript.csproj -c Release -r win-x64
 
@@ -24,6 +30,26 @@ jobs:
         shell: cmd
         run: .\src\Sincript\bin\Release\net8.0-windows\win-x64\publish\Sincript.exe < NUL
 
-      - name: Report binary size
+      # The size report, plus the D17 guard: PlatformTarget=x64 is now conditioned on the build
+      # host being Windows, so the plan-§2 "64-bit-required" marking is no longer unconditional
+      # in the csproj. Assert it directly on the artifact that actually ships instead.
+      - name: Report binary size + assert the shipped PE is AMD64 (D17)
         shell: pwsh
-        run: Get-Item src/Sincript/bin/Release/net8.0-windows/win-x64/publish/Sincript.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}}
+        run: |
+          $exe = 'src/Sincript/bin/Release/net8.0-windows/win-x64/publish/Sincript.exe'
+          Get-Item $exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}}
+
+          # PE layout: e_lfanew at 0x3C -> "PE\0\0" (4 bytes) -> COFF header, whose first
+          # field is the 2-byte Machine type. 0x8664 = IMAGE_FILE_MACHINE_AMD64.
+          $fs = [IO.File]::OpenRead((Resolve-Path $exe))
+          try {
+            $br = New-Object IO.BinaryReader($fs)
+            $fs.Position = 0x3C
+            $fs.Position = $br.ReadInt32() + 4
+            $machine = $br.ReadUInt16()
+          } finally { $fs.Dispose() }
+
+          if ($machine -ne 0x8664) {
+            throw "D17 violated: published exe Machine=0x$($machine.ToString('X4')), expected 0x8664 (AMD64)"
+          }
+          "PE Machine = 0x{0:X4} (AMD64) - bitness contract intact" -f $machine
