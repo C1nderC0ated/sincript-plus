@@ -1,0 +1,20 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+
+# NativeAOT publish artifacts
+*.pdb
+publish/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Local scratch
+*.log

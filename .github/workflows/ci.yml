@@ -1,0 +1,29 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build-and-aot-publish:
+    # NativeAOT for win-x64 cannot cross-compile from Linux/macOS (needs the MSVC link step),
+    # so the publish gate lives here on windows-latest. Plan P0 exit criterion: green AOT publish.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build (AOT + trim analyzers active, warnings are errors)
+        run: dotnet build src/Sincript/Sincript.csproj -c Release
+
+      - name: NativeAOT publish (win-x64, single exe)
+        run: dotnet publish src/Sincript/Sincript.csproj -c Release -r win-x64
+
+      - name: Headless smoke - menu opens and exits cleanly on EOF
+        shell: cmd
+        run: .\src\Sincript\bin\Release\net8.0-windows\win-x64\publish\Sincript.exe < NUL
+
+      - name: Report binary size
+        shell: pwsh
+        run: Get-Item src/Sincript/bin/Release/net8.0-windows/win-x64/publish/Sincript.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}}
