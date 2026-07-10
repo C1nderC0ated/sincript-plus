@@ -127,15 +127,25 @@ contract is enforced on the artifact that actually ships, on every commit.
   `REG_EXPAND_SZ` is read for backup. Without it a backup of `%SystemRoot%` records
   `C:\Windows`, and restoring it onto another machine writes the wrong path. Reading raw bytes
   (F4) sidesteps this entirely; the footnote stands as a guard for any managed read added later.
-- **F8.** *(pending, not yet implemented)* `RegistryService.AlreadyAtTarget` (D3) compares kind
-  first, then data with **kind-aware** semantics: a differing trailing NUL on `SZ`/`EXPAND_SZ` and
-  the decoded string sequence for `MULTI_SZ` compare equal; `DWORD`/`QWORD`/`BINARY`/`NONE` are
-  byte-exact. Strict byte equality would make a stored `REG_SZ` lacking its terminator never
-  match its target, so every apply pass would rewrite it and snapshot the already-tweaked value as
-  its "prior" state — reintroducing the exact SZ backup-burial bug D3 exists to fix.
+- **F8.** `RegistryService.AlreadyAtTarget` (D3) compares kind first, then data with **kind-aware**
+  semantics: a differing trailing NUL on `SZ`/`EXPAND_SZ` and the decoded string sequence for
+  `MULTI_SZ` compare equal; `DWORD`/`QWORD`/`BINARY`/`NONE` are byte-exact. Strict byte equality
+  would make a stored `REG_SZ` lacking its terminator never match its target, so every apply pass
+  would rewrite it and snapshot the already-tweaked value as its "prior" state — reintroducing the
+  exact SZ backup-burial bug D3 exists to fix. Two consequences worth stating: a zero-length
+  `REG_SZ` and a terminator-only one both denote the empty string and compare equal (skipping that
+  write buries nothing); and a trailing zero byte in `REG_BINARY` is *data*, so only the string
+  kinds are normalized. The target is passed as bytes, not a typed value, so whatever encodes a
+  write also encodes the comparison and the two cannot drift.
 - **F9.** *(pending)* I6 requires C# to list/preview/import **batch-era** `.reg` files, which
   `echo` wrote in the console code page (ANSI). New files are UTF-16LE. The reader must sniff the
   BOM and accept both.
+
+- **F10.** *(new micro-deviation, safety-neutral)* `RegBackupFile` bounds the sanitized key segment
+  of a backup filename at 200 characters, head-preserving so the hive stays readable. The batch
+  imposed no bound, so a sufficiently deep key produced a filename Windows refused to create — and
+  the failure vanished into the routine's `>nul 2>&1`. The D12 uniq token still guarantees
+  distinctness, so two keys sharing a 200-character prefix cannot overwrite each other's undo.
 
 **Verification.** F4-F7 are no longer claims about our own model of the `.reg` format.
 `RegFileRoundTripTests` serializes a `PriorValue`, hands the file to `reg import`, reads the value

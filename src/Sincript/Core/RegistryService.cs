@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Sincript.Core;
 
@@ -98,6 +99,85 @@ internal static class RegistryService
         {
             RegCloseKey(key);
         }
+    }
+
+    /// <summary>
+    /// D3/F8. True when the value already holds the target, so the caller must neither back it up
+    /// nor rewrite it.
+    ///
+    /// The batch compared REG_DWORD only, and decimally (:SafeRegAdd 1795-1805). Its own comment
+    /// states the intent — "a redundant re-apply would otherwise snapshot the already-tweaked
+    /// value as its prior state and bury this value's true-original per-value undo" — but the
+    /// guard never covered REG_SZ, so the burial it describes happened on every string tweak.
+    ///
+    /// Equality is kind-aware, not byte-exact, and that is load-bearing. A REG_SZ stored without
+    /// its trailing NUL (legal, and common in the wild) would never compare equal to a canonically
+    /// encoded target under strict byte equality, so every apply pass would rewrite it — walking
+    /// straight back into the burial bug this decision exists to fix.
+    ///
+    /// The target is supplied as bytes rather than a typed value so that whatever encodes a write
+    /// also encodes the comparison, and the two cannot drift apart.
+    /// </summary>
+    public static bool AlreadyAtTarget(PriorValue current, RegKind targetKind, byte[] target)
+    {
+        if (!current.Present) return false;          // nothing there: must write, and must back up
+        if (current.Kind != targetKind) return false; // a kind change is never a no-op
+
+        return targetKind switch
+        {
+            RegKind.Sz or RegKind.ExpandSz => StringDataEqual(current.Data, target),
+            RegKind.MultiSz => MultiStringDataEqual(current.Data, target),
+
+            // DWORD, QWORD, BINARY, NONE and every unnamed kind are opaque octets. A trailing zero
+            // byte in REG_BINARY is data, not padding, so nothing may be trimmed here.
+            _ => current.Data.AsSpan().SequenceEqual(target),
+        };
+    }
+
+    /// <summary>
+    /// Compares string data ignoring how many NUL terminators each side carries. An odd-length
+    /// blob is not UTF-16 at all, so it falls back to byte equality rather than being reinterpreted.
+    /// Note that a zero-length REG_SZ and a terminator-only one both denote the empty string and
+    /// compare equal; skipping a write in that case is correct and buries nothing.
+    /// </summary>
+    private static bool StringDataEqual(byte[] current, byte[] target)
+    {
+        if (current.Length % 2 != 0 || target.Length % 2 != 0)
+            return current.AsSpan().SequenceEqual(target);
+
+        return TrimTrailingNulUnits(current).SequenceEqual(TrimTrailingNulUnits(target));
+    }
+
+    private static ReadOnlySpan<byte> TrimTrailingNulUnits(byte[] data)
+    {
+        int end = data.Length;
+        while (end >= 2 && data[end - 2] == 0 && data[end - 1] == 0) end -= 2;
+        return data.AsSpan(0, end);
+    }
+
+    /// <summary>
+    /// MULTI_SZ is a run of NUL-terminated strings closed by one more NUL, so the tail of the blob
+    /// decodes to empty elements whose count depends only on how the writer terminated it. Compare
+    /// the string sequence instead. An empty element cannot occur in a well-formed MULTI_SZ — it
+    /// would be indistinguishable from the final terminator — so dropping trailing empties cannot
+    /// equate two genuinely different values.
+    /// </summary>
+    private static bool MultiStringDataEqual(byte[] current, byte[] target)
+    {
+        if (current.Length % 2 != 0 || target.Length % 2 != 0)
+            return current.AsSpan().SequenceEqual(target);
+
+        return DecodeMultiSz(current).SequenceEqual(DecodeMultiSz(target), StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<string> DecodeMultiSz(byte[] data)
+    {
+        string[] parts = Encoding.Unicode.GetString(data).Split('\0');
+
+        int count = parts.Length;
+        while (count > 0 && parts[count - 1].Length == 0) count--;
+
+        return parts.Take(count);
     }
 
     // Classic DllImport, matching Hardware.cs: NativeAOT compiles the marshalling stubs ahead of
